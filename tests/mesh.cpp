@@ -39,11 +39,12 @@ int main(int argc, char *argv[])
 
 	/* Meshing filters */
 	MSA::DataPointsFilters filtersMesh;
-	filtersMesh.push_back(new MSA::ITMLocalMeshingFilter);
-	filtersMesh.push_back(new MSA::ArtifactsRemovalMeshingFilter(1.1, 0.5, 0.2));
+	filtersMesh.push_back(new PointMesher<double>::ITMLocalMeshingFilter());
+	filtersMesh.push_back(new PointMesher<double>::ArtifactsRemovalMeshingFilter(1.1, 0.5, 0.2));
+	
 	//filtersMesh.push_back(new MSA::ArtifactsRemovalMeshingFilter(1.25, 10, 0.15));
 	//filtersMesh.push_back(new MSA::SimplifyMeshingFilter(10000));
-	filtersMesh.applyPre(data, iterate);
+//	filtersMesh.applyPre(data, iterate);
 	inspector.dumpDataPoints(data, "mesh_centroid");
 	inspector.dumpMeshNodes(data, "triangle_mesh"); // dump data 3
 
