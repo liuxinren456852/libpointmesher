@@ -3,7 +3,7 @@
 /*
 
 Copyright (c) 2010--2011,
-Andreas Breitenmoserand Stephane Magnenat, ASL, ETHZ, Switzerland
+Andreas Breitenmoser and Stephane Magnenat, ASL, ETHZ, Switzerland
 You can contact the authors at <andreas dot breitenmoser at mavt dot ethz dot ch>
 and <stephane at magnenat dot net>
 
@@ -59,161 +59,211 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 * Mesh processing
 **************************************************************************/
 
-/** ArtifactsRemovalMeshingFilter */
+// MeshFilter
+
+// Compute triangle centroid
+template<typename T>
+typename PointMesher<T>::Vector3 PointMesher<T>::MeshFilter::computeCentroid(const Matrix3 matrixIn) const
+{
+	typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
+	typedef K::Point_3 Point;
+	typedef CGAL::Triangle_3<K> Triangle;
+
+	// Create triangle	
+	Triangle tri(Point(matrixIn(0, 0), matrixIn(1, 0), matrixIn(2, 0)),
+			Point(matrixIn(0, 1), matrixIn(1, 1), matrixIn(2, 1)),
+			Point(matrixIn(0, 2), matrixIn(1, 2), matrixIn(2, 2)));
+	Point pointC = centroid(tri);
+
+	Vector3 vc;
+	vc(0) = pointC.x();
+	vc(1) = pointC.y();
+	vc(2) = pointC.z();
+
+	return vc;
+}
+
+// Compute normal of plane in 3D
+template<typename T>
+typename PointMesher<T>::Vector3 PointMesher<T>::MeshFilter::computeNormal(Matrix3 matrixIn) const
+{
+	Vector3 v1 = matrixIn.col(1) - matrixIn.col(0);
+	Vector3 v2 = matrixIn.col(2) - matrixIn.col(0);
+	Vector3 vn = v1.cross(v2);
+
+	return vn.normalized();
+}
+
+// ---------------------------------
+
+/* Mesh operations */
+
+// Identity
+
+template<typename T>
+typename PointMesher<T>::Mesh PointMesher<T>::IdentityMeshFilter::filter(const Mesh& meshIn, bool& iterate)
+{
+	return meshIn;
+}
+
+template struct PointMesher<float>::IdentityMeshFilter;
+template struct PointMesher<double>::IdentityMeshFilter;
+
+
+// Removal of artifacts from mesh
 
 // Constructor
 template<typename T>
-PointMesher<T>::ArtifactsRemovalMeshingFilter::ArtifactsRemovalMeshingFilter(
+PointMesher<T>::ArtifactsRemovalMeshFilter::ArtifactsRemovalMeshFilter(
 	const T thresh1, const T thresh2, const T thresh3):
 	thresh1(thresh1), thresh2(thresh2), thresh3(thresh3){}
 
-// Prefilter 
+// Filter
 template<typename T>
-typename PointMesher<T>::DataPoints PointMesher<T>::ArtifactsRemovalMeshingFilter::preFilter(
-	const DataPoints& input, bool &iterate) const
+typename PointMesher<T>::Mesh PointMesher<T>::ArtifactsRemovalMeshFilter::filter(const Mesh& meshIn, bool& iterate) const
 {
-	assert((input.descriptors.rows() >= 15) && (input.features.cols() == input.descriptors.cols()));
-
 	// Initialization
-	int nbCols, nbTriangles, j;
-	typename DataPoints::Features featIn;
-	typename DataPoints::Descriptors descIn;
-	typename DataPoints::Features featOut;
-	typename DataPoints::Descriptors descOut;
+	int dimV, dimAttrV, nbV, dimF, dimAttrF, nbF, j;
 	
-	featIn = input.features;
-	descIn = input.descriptors;
-	int nbFeatRows = featIn.rows();
-	int nbDescRows = descIn.rows();
-	featOut = featIn;
-	descOut = descIn;
+	Mesh mesh = meshIn;
+
+	Matrix vListIn = meshIn.vertexList;
+	Matrix vAttrListIn = meshIn.vertexAttrList;
+	MAtrix vListOut = vListIn;
+	Matrix vAttrListOut = vAttrListIn;
+
+	Matrix fListIn = meshIn.faceList;
+	Matrix fAttrListIn = meshIn.faceAttrList;
+	Matrix fListOut = fListIn;
+	Matrix fAttrListOut = fAttrListIn;
+
+	dimV = vListIn.rows();
+	dimAttrV = vAttrListIn.rows();
+	nbV = vListIn.cols();
+	dimF = fListIn.rows();
+	dimAttrF = fAttrListIn.rows();
+	nbF = fListIn.cols();
+	j = nbF;
 
 	/* Filter 1
-	*	for every triangle in the mesh, apply threshold on the ratio
-	*	between its closest and farthest vertices relative to the sensor origin
-	*	-> remove shadow triangles
+	*	for every face in the mesh, apply threshold on the ratio
+	*	between its closest and farthest vertex relative to the sensor origin
+	*	-> remove shadow faces
 	*/
 	if (thresh1 > 0)
-	{
-	  	nbCols = descIn.cols();
-
+	{  	
 		// Compute distances
-		Matrix mDist(3, nbCols);
-		mDist.row(0) = descIn.block(3, 0, 3, nbCols).colwise().norm();
-		mDist.row(1) = descIn.block(6, 0, 3, nbCols).colwise().norm();
-		mDist.row(2) = descIn.block(9, 0, 3, nbCols).colwise().norm();
+		Vector vDist = mesh.computeVertexDist();
+		Matrix mDist(dimF, nbF);
+		for (int i = 0; i < nbF; i++)
+		{
+			for (int k = 0; k < dimF; k++)
+			{
+				mDist(i, k) = vDist(fListIn(k, i));
+			}
+		}
 
-		Matrix mRatio(1, nbCols);
-		mRatio = mDist.colwise().maxCoeff();
-		mRatio = mRatio.cwise() / mDist.colwise().minCoeff();
-		nbTriangles = (mRatio.cwise() < thresh1).count();
+		Vector mRatio(nbF);
+		mRatio = mDist.rowwise().maxCoeff();
+		mRatio = mRatio.cwise() / mDist.rowwise().minCoeff();
+		nbF = (mRatio.cwise() < thresh1).count();
 
 		// Filtering
-		featOut = typename DataPoints::Features(nbFeatRows, nbTriangles);
-		descOut = typename DataPoints::Descriptors(nbDescRows, nbTriangles);
+		fListOut = Matrix(dimF, nbF);
+		fAttrListOut = Matrix(dimAttrF, nbF);
 
 		j = 0;
-		for (int i = 0; i < nbCols; i++)
+		for (int i = 0; i < nbF; i++)
 		{
 			if (mRatio(i) < thresh1)
 			{
-				featOut.col(j) = featIn.col(i);
-				descOut.col(j) = descIn.col(i);
+				fListOut.col(j) = fListIn.col(i);
+				fAttrListOut.col(j) = fAttrListIn.col(i);
 				j++;
 			}
 		}
 
-		featIn = featOut;
-		descIn = descOut;
+		// Update
+		fListIn = fListOut;
+		fAttrListIn = fAttrListOut;
+		Mesh mesh(vListIn, vAttrListIn, meshIn.vertexAttrLabels,
+				  fListIn, fAttrListIn, meshIn.faceAttrLabels);
 	}
 
 	/* Filter 2
-	*	for every triangle in the mesh, apply threshold on triangle's perimeter
-	*	-> remove frontier triangles
+	*	for every face in the mesh, apply threshold on the face's perimeter
+	*	-> remove frontier faces
 	*/
 	
 	if (thresh2 > 0 && j > 0)
 	{
-		nbCols = descIn.cols();
-
 		// Compute perimeters
-		Matrix mSideL(3, nbCols);
-		mSideL.row(0) = (descIn.block(3, 0, 3, nbCols) - descIn.block(6, 0, 3, nbCols)).colwise().norm();
-		mSideL.row(1) = (descIn.block(3, 0, 3, nbCols) - descIn.block(9, 0, 3, nbCols)).colwise().norm();
-		mSideL.row(2) = (descIn.block(6, 0, 3, nbCols) - descIn.block(9, 0, 3, nbCols)).colwise().norm();
-		
-		Matrix mPerim(1, nbCols);
-		mPerim = mSideL.colwise().sum();
-		nbTriangles = (mPerim.cwise() < thresh2).count();
+		Vector vPerim = mesh.computePerimeters();
+		nbF = (vPerim.cwise() < thresh2).count();
 
 		// Filtering
-		featOut = typename DataPoints::Features(nbFeatRows, nbTriangles);
-		descOut = typename DataPoints::Descriptors(nbDescRows, nbTriangles);
+		fListOut = Matrix(dimF, nbF);
+		fAttrListOut = Matrix(dimAttrF, nbF);
 
 		j = 0;
-		for (int i = 0; i < nbCols; i++)
+		for (int i = 0; i < nbF; i++)
 		{
-			if (mPerim(i) < thresh2)
+			if (vPerim(i) < thresh2)
 			{
-				featOut.col(j) = featIn.col(i);
-				descOut.col(j) = descIn.col(i);
+				fListOut.col(j) = fListIn.col(i);
+				fAttrListOut.col(j) = fAttrListIn.col(i);
 				j++;
 			}
 		}
 
-		featIn = featOut;
-		descIn = descOut;
+		// Update
+		fListIn = fListOut;
+		fAttrListIn = fAttrListOut;
+		Mesh mesh(vListIn, vAttrListIn, meshIn.vertexAttrLabels,
+				  fListIn, fAttrListIn, meshIn.faceAttrLabels);
 	}
 
 	/* Filter 3
-	*	for every triangle in the mesh, apply threshold on the triangles
+	*	for every face in the mesh, apply threshold on the faces
 	*	with small incident angle relative to the sensor's line of sight
-	* 	-> remove remaining shadow triangles that escaped Filter 1
+	* 	-> remove remaining shadow faces that escaped Filter 1
 	*/
 	if (thresh3 > 0 && j > 0)
 	{
-		nbCols = descIn.cols();
-
-		// Compute incident angle
-		Matrix mUnitVec(3, nbCols);
-		Matrix mVecNorm = featIn.colwise().norm();
-		mUnitVec.row(0) = featIn.row(0).cwise() / mVecNorm;
-		mUnitVec.row(1) = featIn.row(1).cwise() / mVecNorm;
-		mUnitVec.row(2) = featIn.row(2).cwise() / mVecNorm;
-
-		Matrix mIncAngle(1, nbCols);
-		Matrix mUnitNormal = descIn.block(0, 0, 3, nbCols);
-		Matrix mComp = (mUnitNormal.cwise() * mUnitVec).cwise().abs();
-		mIncAngle = mComp.colwise().sum();
-		nbTriangles = (mIncAngle.cwise() > thresh3).count();
+		Vector vIncAngle = mesh.computeIncAngles();
+		nbF = (vIncAngle.cwise() > thresh3).count();
 
 		// Filtering
-		featOut = typename DataPoints::Features(nbFeatRows, nbTriangles);
-		descOut = typename DataPoints::Descriptors(nbDescRows, nbTriangles);
+		fListOut = Matrix(dimF, nbF);
+		fAttrListOut = Matrix(dimAttrF, nbF);
 
 		j = 0;
-		for (int i = 0; i < nbCols; i++)
+		for (int i = 0; i < nbF; i++)
 		{
-			if (mIncAngle(i) > thresh3)
+			if (vIncAngle(i) > thresh3)
 			{
-				featOut.col(j) = featIn.col(i);
-				descOut.col(j) = descIn.col(i);
+				fListOut.col(j) = fListIn.col(i);
+				fAttrListOut.col(j) = fAttrListIn.col(i);
 				j++;
 			}
 		}
 
-		featIn = featOut;
-		descIn = descOut;
+		// Update
+		fListIn = fListOut;
+		fAttrListIn = fAttrListOut;
+		Mesh mesh(vListIn, vAttrListIn, meshIn.vertexAttrLabels,
+				  fListIn, fAttrListIn, meshIn.faceAttrLabels);
 	}
-
-	return DataPoints(featOut, input.featureLabels, descOut, input.descriptorLabels);
+	
+	mesh.cleanVertices();
+	return mesh;
 }
 
-template struct PointMesher<float>::ArtifactsRemovalMeshingFilter;
-template struct PointMesher<double>::ArtifactsRemovalMeshingFilter;
+template struct PointMesher<float>::ArtifactsRemovalMeshFilter;
+template struct PointMesher<double>::ArtifactsRemovalMeshFilter;
 
 
-/** SimplifyMeshingFilter */
+// Simplify mesh
 
 // Modifier creating a surface mesh
 typedef CGAL::Simple_cartesian<double> K;
