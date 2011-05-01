@@ -109,13 +109,14 @@ struct PointMesher
 		virtual ~Mesher() {}
 		virtual Mesh* generateMesh(const DataPoints& ptCloud) = 0;
 	
-		// Additional standard point cloud filters from PCL
 		#ifdef HAVE_PCL
+			// Conversion of data structures between PCL and libpointmatcher/mesher
 			DataPointsPCL* convertPclDatapoints(const DataPoints& ptCloud); // conversion from DataPoints to PCL PointCloud
 			Mesh* convertPclPolyMesh(const MeshPCL& triMesh); // conversion from PCL PolygonMesh to Mesh
-
-			void statOutlierRemovalPCLFilter(DataPointsPCL& ptCloud); // wrapper for statistical outlier removal
-			void mlsResamplingPCLFilter(DataPointsPCL& ptCloud); // wrapper for Robust Movving Least Squares (RMLS)
+			
+			// Additional standard point cloud filters from PCL
+			void statOutlierRemovalPCLFilter(DataPointsPCL& ptCloud, int mean, double stdMul); // wrapper for statistical outlier removal
+			void mlsResamplingPCLFilter(DataPointsPCL& ptCloud, double searchRadius); // wrapper for Robust Movving Least Squares (RMLS)
 			void surfaceNormalsPCLFilter(DataPointsPCL& ptCloud); // wrapper for surface normal estimation
 			void orientNormalsPCLFilter(DataPointsPCL& ptCLoud); // wrapper for orientation of surface normals by view point
 		#endif // HAVE_PCL
@@ -147,19 +148,34 @@ struct PointMesher
 	 * Global meshing methods
 	 **/
 
-	// Fast triangulation of unordered point clouds
 	#ifdef HAVE_PCL
+	// Fast triangulation of unordered point clouds
+
 	class FastGlobalMesher: public Mesher
 	{
-		private:
-			int x;
-		
-		public:
-			FastGlobalMesher(int x);
-			virtual ~FastGlobalMesher() {};
-			virtual Mesh* generateMesh(const DataPoints& ptCloud);
+	private:
+		const double searchRadius;
+		const double mu;
+		const int maxNN;
+		const double maxSurfAngle;
+		const double minAngle;
+		const double maxAngle;
+		const bool normConsist;
+
+	public:
+		FastGlobalMesher(const double searchRadius = 0.025,
+			const double mu = 2.5,
+			const int maxNN = 100,
+			const double maxSurfAngle = M_PI/4,
+			const double minAngle = M_PI/18,
+			const double maxAngle = 2*M_PI/3,
+			const bool normConsist = false);
+			// maxSurfAngle = 45 deg, minAngle = 10 deg, maxAngle = 120 deg
+		virtual ~FastGlobalMesher() {};
+		virtual Mesh* generateMesh(const DataPoints& ptCloud);
 	};
 	#endif // HAVE_PCL
+
 
 /**********************************************************************************
  * MeshFilter
