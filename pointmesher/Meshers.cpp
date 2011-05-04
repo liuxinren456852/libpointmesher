@@ -19,7 +19,7 @@ modification, are permitted provided that the following conditions are met:
  	* Redistributions in binary form must reproduce the above copyright
  	  notice, this list of conditions and the following disclaimer in the
  	  documentation and/or other materials provided with the distribution.
- 	* Neither the name of the <organization> nor the
+	* Neither the name of the <organization> nor the
  	  names of its contributors may be used to endorse or promote products
  	  derived from this software without specific prior written permission.
 
@@ -80,9 +80,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifdef HAVE_PCL
 // Conversion from libpointmatcher point cloud to PCL point cloud.
 template<typename T>
-typename PointMesher<T>::DataPointsPCL* PointMesher<T>::Mesher::convertPclDatapoints(const DataPoints& ptCloud)
+typename PointMesher<T>::DataPointsPCL PointMesher<T>::Mesher::convertPclDatapoints(const DataPoints& ptCloud)
 {
-	DataPointsPCL* ptCloudConv_ptr = new DataPointsPCL;
+	DataPointsPCL* pPtCloudPCL_conv = new DataPointsPCL;
 
 	const int nbPoints = ptCloud.features.cols();
 	const int nbDesc = ptCloud.descriptors.cols();
@@ -90,10 +90,10 @@ typename PointMesher<T>::DataPointsPCL* PointMesher<T>::Mesher::convertPclDatapo
 	if (nbPoints == 0)
 	{
 		std::cout << "[Warning] Mesher: Converted empty point cloud.\n";
-		return ptCloudConv_ptr;
+		return *pPtCloudPCL_conv;
 	}
 	
-	//std::cout << "# points: " << nbDesc << std::endl;
+	std::cout << "# points: " << nbDesc << std::endl;
 
 	int nbNormals = 0;
 	Matrix normals;
@@ -116,10 +116,10 @@ typename PointMesher<T>::DataPointsPCL* PointMesher<T>::Mesher::convertPclDatapo
 			ptNormal.normal[0] = normals(0, i);
 			ptNormal.normal[1] = normals(1, i);
 			ptNormal.normal[2] = normals(2, i);
-			ptCloudConv_ptr->push_back(ptNormal);
+			pPtCloudPCL_conv->push_back(ptNormal);
 		}
 
-		//std::cout << "Pts. & normals, # normals: " << nbNormals << " " << i << std::endl;
+		std::cout << "Pts. & normals, # normals: " << nbNormals << " " << i << std::endl;
 	}
 	else
 	{
@@ -133,19 +133,19 @@ typename PointMesher<T>::DataPointsPCL* PointMesher<T>::Mesher::convertPclDatapo
 			//ptNormal.normal[0] = 0.0;
 			//ptNormal.normal[1] = 0.0;
 			//ptNormal.normal[2] = 0.0;
-			ptCloudConv_ptr->push_back(ptNormal);
+			pPtCloudPCL_conv->push_back(ptNormal);
 		}
 		
-		//std::cout << "Only Pts., # points: " << nbNormals << " " <<  i << std::endl;
+		std::cout << "Only Pts., # points: " << nbNormals << " " <<  i << std::endl;
 	}
 	
-	return ptCloudConv_ptr;
+	return *pPtCloudPCL_conv;
 }
 
 
 // Conversion from PCL mesh structure to libpointmesher mesh structure.
 template<typename T>
-typename PointMesher<T>::Mesh* PointMesher<T>::Mesher::convertPclPolyMesh(const MeshPCL& triMeshPCL)
+typename PointMesher<T>::Mesh PointMesher<T>::Mesher::convertPclPolyMesh(const MeshPCL& triMeshPCL)
 {
 	int nbPoints = triMeshPCL.cloud.width * triMeshPCL.cloud.height;
 	int ptSize = triMeshPCL.cloud.data.size() / nbPoints;
@@ -154,7 +154,7 @@ typename PointMesher<T>::Mesh* PointMesher<T>::Mesher::convertPclPolyMesh(const 
 	int nbDim = triMeshPCL.cloud.fields.size();
 	float* ptsVal = new float[nbDim];
 
-	Mesh triMesh;
+	Mesh* pTriMesh = new Mesh;
 	typedef typename Mesh::VertexHandle MVHandle;
 	MVHandle* vHandle = new MVHandle[nbPoints];
 	std::vector<MVHandle> fHandles;
@@ -182,7 +182,7 @@ typename PointMesher<T>::Mesh* PointMesher<T>::Mesher::convertPclPolyMesh(const 
 					vArray[index] = 1;
 					memcpy(ptsVal+q, &triMeshPCL.cloud.data[index*ptSize + triMeshPCL.cloud.fields[q].offset], sizeof(float));
 				}
-				vHandle[index] = triMesh.add_vertex(MPoint(ptsVal[0], ptsVal[1], ptsVal[2]));
+				vHandle[index] = pTriMesh->add_vertex(MPoint(ptsVal[0], ptsVal[1], ptsVal[2]));
 			}
 		}
 
@@ -190,7 +190,7 @@ typename PointMesher<T>::Mesh* PointMesher<T>::Mesher::convertPclPolyMesh(const 
 		{
 			fHandles.push_back(vHandle[vIndex[j]]);
 		}
-		triMesh.add_face(fHandles);
+		pTriMesh->add_face(fHandles);
 		
 		fHandles.clear();
 		delete [] vIndex;
@@ -199,59 +199,63 @@ typename PointMesher<T>::Mesh* PointMesher<T>::Mesher::convertPclPolyMesh(const 
 	delete [] ptsVal;
 	delete [] vHandle;
 
-	return &triMesh;
+	return *pTriMesh;
 }
 
 
 // Removing outliers using a statistical outlier removal filter
 template<typename T>
-void PointMesher<T>::Mesher::statOutlierRemovalPCLFilter(DataPointsPCL& ptCloudPCL, int mean, double stdMul)
+typename PointMesher<T>::DataPointsPCL PointMesher<T>::Mesher::statOutlierRemovalPCLFilter(const DataPointsPCL& ptCloudPCL, int mean, double stdMul)
 {
-	boost::shared_ptr<DataPointsPCL> ptCloudPCL_shared(&ptCloudPCL);
-	DataPointsPCL::Ptr ptCloudPCL_filtered(new DataPointsPCL);
+	boost::shared_ptr<DataPointsPCL> pPtCloudPCL_shared(&ptCloudPCL);
+	DataPointsPCL::Ptr pPtCloudPCL_filtered(new DataPointsPCL);
 
 	// Create the filtering object
 	pcl::StatisticalOutlierRemoval<pcl::PointNormal> sor;
-	sor.setInputCloud(ptCloudPCL_shared);
+	sor.setInputCloud(pPtCloudPCL_shared);
 	sor.setMeanK(mean);
 	sor.setStddevMulThresh(stdMul);
-	sor.filter(*ptCloudPCL_filtered);
+	sor.filter(*pPtCloudPCL_filtered);
 
 	pcl::PCDWriter writer;
-	writer.write<pcl::PointNormal>("table_scene_lms400_inliers.pcd", *ptCloudPCL_filtered, false);
+	writer.write<pcl::PointNormal>("table_scene_lms400_inliers.pcd", *pPtCloudPCL_filtered, false);
 
 	sor.setNegative(true);
-	sor.filter(*ptCloudPCL_filtered);
-	writer.write<pcl::PointNormal> ("table_scene_lms400_outliers.pcd", *ptCloudPCL_filtered, false);
+	sor.filter(*pPtCloudPCL_filtered);
+	writer.write<pcl::PointNormal> ("table_scene_lms400_outliers.pcd", *pPtCloudPCL_filtered, false);
+
+	return *pPtCloudPCL_filtered;
 }
 
 
 // Smoothing and normal estimation based on polynomial reconstruction
 template<typename T>
-void PointMesher<T>::Mesher::mlsResamplingPCLFilter(DataPointsPCL& ptCloudPCL, double searchRadius)
+typename PointMesher<T>::DataPointsPCL PointMesher<T>::Mesher::mlsResamplingPCLFilter(const DataPointsPCL& ptCloudPCL, const double searchRadius)
 {
-	boost::shared_ptr<DataPointsPCL> ptCloudPCL_shared(&ptCloudPCL);
-	DataPointsPCL::Ptr ptCloudPCL_filtered(new DataPointsPCL);
+	boost::shared_ptr<DataPointsPCL> pPtCloudPCL_shared(&ptCloudPCL);
+	DataPointsPCL::Ptr pPtCloudPCL_filtered(new DataPointsPCL);
 
 	// Create KD-tree
-	pcl::KdTree<pcl::PointNormal>::Ptr tree = boost::make_shared<pcl::KdTreeFLANN<pcl::PointNormal> >();
-	tree->setInputCloud(ptCloudPCL_shared);
+	pcl::KdTree<pcl::PointNormal>::Ptr pTree = boost::make_shared<pcl::KdTreeFLANN<pcl::PointNormal> >();
+	pTree->setInputCloud(pPtCloudPCL_shared);
 
 	// Create the filtering object
 	pcl::MovingLeastSquares<pcl::PointNormal, pcl::PointNormal> mls;
 	
 	// Set filter parameters
-	mls.setOutputNormals(ptCloudPCL_filtered);
-	mls.setInputCloud(ptCloudPCL_shared);
+	mls.setOutputNormals(pPtCloudPCL_filtered);
+	mls.setInputCloud(pPtCloudPCL_shared);
 	mls.setPolynomialFit(true);
-	mls.setSearchMethod(tree);
+	mls.setSearchMethod(pTree);
 	mls.setSearchRadius(searchRadius);
 
 	// Filter
-	mls.reconstruct(*ptCloudPCL_filtered);
+	mls.reconstruct(*pPtCloudPCL_filtered);
 
 	// Save output
-	pcl::io::savePCDFile("bun0-mls.pcd", *ptCloudPCL_filtered);
+	pcl::io::savePCDFile("bun0-mls.pcd", *pPtCloudPCL_filtered);
+
+	return *pPtCloudPCL_filtered;
 }
 
 template<typename T>
@@ -354,6 +358,7 @@ template struct PointMesher<float>::ITMLocalMesher;
 template struct PointMesher<double>::ITMLocalMesher;
 */
 
+// 
 
 /**
  * Global meshing methods
@@ -376,31 +381,29 @@ PointMesher<T>::FastGlobalMesher::FastGlobalMesher(const double searchRadius,
 
 // Fast triangulation of unordered point clouds
 template<typename T>
-typename PointMesher<T>::Mesh* PointMesher<T>::FastGlobalMesher::generateMesh(const DataPoints& ptCloud)
+typename PointMesher<T>::Mesh PointMesher<T>::FastGlobalMesher::generateMesh(const DataPoints& ptCloud)
 {
-	pcl::PointCloud<pcl::PointNormal>* cloud_pcl = new pcl::PointCloud<pcl::PointNormal>();
-	//pcl::PointCloud<pcl::PointNormal>::Ptr cloud_pcl(new pcl::PointCloud<pcl::PointNormal>);
-	cloud_pcl = Mesher::convertPclDatapoints(ptCloud);
-	boost::shared_ptr<pcl::PointCloud<pcl::PointNormal> > cloud_sharedPCL(cloud_pcl);
+	DataPointsPCL ptCloudPCL = Mesher::convertPclDatapoints(ptCloud);
+	boost::shared_ptr<DataPointsPCL> pPtCloudPCL_shared(&ptCloudPCL);
 
 	// Normal estimation
 	pcl::NormalEstimation<pcl::PointNormal, pcl::Normal> normEstim;
-	pcl::PointCloud<pcl::Normal>::Ptr cloud_normals(new pcl::PointCloud<pcl::Normal>);
-	pcl::KdTree<pcl::PointNormal>::Ptr normTree = boost::make_shared<pcl::KdTreeFLANN<pcl::PointNormal> >();
-	normTree->setInputCloud(cloud_sharedPCL);
+	pcl::PointCloud<pcl::Normal>::Ptr pPtCloudPCL_normals(new pcl::PointCloud<pcl::Normal>);
+	pcl::KdTree<pcl::PointNormal>::Ptr pNormTree = boost::make_shared<pcl::KdTreeFLANN<pcl::PointNormal> >();
+	pNormTree->setInputCloud(pPtCloudPCL_shared);
 
-	normEstim.setInputCloud(cloud_sharedPCL);
-	normEstim.setSearchMethod(normTree);
+	normEstim.setInputCloud(pPtCloudPCL_shared);
+	normEstim.setSearchMethod(pNormTree);
 	normEstim.setKSearch(20);
-	normEstim.compute(*cloud_normals);
+	normEstim.compute(*pPtCloudPCL_normals);
 
 	// Concatenate the point and normal fields
-	pcl::PointCloud<pcl::PointNormal>::Ptr cloud_ptsNormals(new pcl::PointCloud<pcl::PointNormal>);
-	pcl::concatenateFields(*cloud_sharedPCL, *cloud_normals, *cloud_ptsNormals);
+	DataPointsPCL::Ptr pPtCloudPCL_ptNormals(new DataPointsPCL);
+	pcl::concatenateFields(*pPtCloudPCL_shared, *pPtCloudPCL_normals, *pPtCloudPCL_ptNormals);
 
 	// Create search tree
-	pcl::KdTree<pcl::PointNormal>::Ptr recTree = boost::make_shared<pcl::KdTreeFLANN<pcl::PointNormal> >();
-	recTree->setInputCloud(cloud_ptsNormals);
+	pcl::KdTree<pcl::PointNormal>::Ptr pRecTree = boost::make_shared<pcl::KdTreeFLANN<pcl::PointNormal> >();
+	pRecTree->setInputCloud(pPtCloudPCL_ptNormals);
 
 	// Initialize objects
 	pcl::GreedyProjectionTriangulation<pcl::PointNormal> fastTria;
@@ -418,8 +421,8 @@ typename PointMesher<T>::Mesh* PointMesher<T>::FastGlobalMesher::generateMesh(co
 	fastTria.setNormalConsistency(normConsist);
 
 	// Get result
-	fastTria.setInputCloud(cloud_ptsNormals);
-	fastTria.setSearchMethod(recTree);
+	fastTria.setInputCloud(pPtCloudPCL_ptNormals);
+	fastTria.setSearchMethod(pRecTree);
 	fastTria.reconstruct(triMeshPCL);
 
 	// Additional vertex information
@@ -432,15 +435,15 @@ std::cout << "Hello1" << std::endl;
 
 std::cout << "Hello2" << std::endl;
 
-	Mesh* triMesh_ptr;
+	Mesh triMesh;
 
 std::cout << "Hello3" << std::endl;
 
-	triMesh_ptr = Mesher::convertPclPolyMesh(triMeshPCL);
+	triMesh = Mesher::convertPclPolyMesh(triMeshPCL);
 
 std::cout << "Hello4" << std::endl;
 
-	return triMesh_ptr; 
+	return triMesh; 
 }
 
 template struct PointMesher<float>::FastGlobalMesher;

@@ -107,23 +107,23 @@ struct PointMesher
 	struct Mesher
 	{
 		virtual ~Mesher() {}
-		virtual Mesh* generateMesh(const DataPoints& ptCloud) = 0;
+		virtual Mesh generateMesh(const DataPoints& ptCloud) = 0;
 	
 		#ifdef HAVE_PCL
 			// Conversion of data structures between PCL and libpointmatcher/mesher
-			DataPointsPCL* convertPclDatapoints(const DataPoints& ptCloud); // conversion from DataPoints to PCL PointCloud
-			Mesh* convertPclPolyMesh(const MeshPCL& triMesh); // conversion from PCL PolygonMesh to Mesh
+			DataPointsPCL convertPclDatapoints(const DataPoints& ptCloud); // conversion from DataPoints to PCL PointCloud
+			Mesh convertPclPolyMesh(const MeshPCL& triMesh); // conversion from PCL PolygonMesh to Mesh
 			
 			// Additional standard point cloud filters from PCL
-			void statOutlierRemovalPCLFilter(DataPointsPCL& ptCloud, int mean, double stdMul); // wrapper for statistical outlier removal
-			void mlsResamplingPCLFilter(DataPointsPCL& ptCloud, double searchRadius); // wrapper for Robust Movving Least Squares (RMLS)
+			DataPointsPCL statOutlierRemovalPCLFilter(const DataPointsPCL& ptCloudPCL, int mean, double stdMul); // wrapper for statistical outlier removal
+			DataPointsPCL mlsResamplingPCLFilter(const DataPointsPCL& ptCloudPCL, const double searchRadius); // wrapper for Robust Movving Least Squares (RMLS)
 			void surfaceNormalsPCLFilter(DataPointsPCL& ptCloud); // wrapper for surface normal estimation
 			void orientNormalsPCLFilter(DataPointsPCL& ptCLoud); // wrapper for orientation of surface normals by view point
 		#endif // HAVE_PCL
 	};
 
 
-	/**
+	/*
 	 * Local meshing methods (sensor-centric)
 	 **/
 /*	
@@ -172,7 +172,7 @@ struct PointMesher
 			const bool normConsist = false);
 			// maxSurfAngle = 45 deg, minAngle = 10 deg, maxAngle = 120 deg
 		virtual ~FastGlobalMesher() {};
-		virtual Mesh* generateMesh(const DataPoints& ptCloud);
+		virtual Mesh generateMesh(const DataPoints& ptCloud);
 	};
 	#endif // HAVE_PCL
 
