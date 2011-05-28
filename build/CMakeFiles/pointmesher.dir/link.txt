@@ -1,0 +1,2 @@
+/usr/bin/ar cr libpointmesher.a  CMakeFiles/pointmesher.dir/pointmesher/Meshers.cpp.o CMakeFiles/pointmesher.dir/pointmesher/MeshFilters.cpp.o
+/usr/bin/ranlib libpointmesher.a

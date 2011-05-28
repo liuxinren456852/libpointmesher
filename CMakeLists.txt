@@ -193,7 +193,7 @@ add_definitions(-Wall)
 
 add_library(pointmesher
 	pointmesher/Meshers.cpp
-#	pointmesher/MeshFilters.cpp
+	pointmesher/MeshFilters.cpp
 #	pointmesher/MeshHelpers.cpp
 )
 install(TARGETS pointmesher ARCHIVE DESTINATION lib)
@@ -208,6 +208,11 @@ install(FILES
 
 add_executable(mesh tests/mesh.cpp)
 target_link_libraries(mesh pointmesher ${POINT_MATCHER_LIBRARY} ${NABO_LIBRARY} ${BOOST_LIBRARIES} ${OPENMESH_LIBRARY} ${ISOEX_LIBRARY} ${EXTRA_LIBS})
+
+if (CGAL_LIBRARY) # just for now, changed soon
+	add_executable(meshITM tests/meshITM.cpp)
+	target_link_libraries(meshITM pointmesher ${POINT_MATCHER_LIBRARY} ${NABO_LIBRARY} ${BOOST_LIBRARIES} ${OPENMESH_LIBRARY} ${ISOEX_LIBRARY} ${EXTRA_LIBS})
+endif(CGAL_LIBRARY)
 
 if (PCL_FOUND)
 	add_executable(meshFast tests/meshFast.cpp)

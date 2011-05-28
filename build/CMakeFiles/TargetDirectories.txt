@@ -1,0 +1,5 @@
+/home/andi/SW/libpointmesher/build/CMakeFiles/mesh.dir
+/home/andi/SW/libpointmesher/build/CMakeFiles/meshFast.dir
+/home/andi/SW/libpointmesher/build/CMakeFiles/meshFilter.dir
+/home/andi/SW/libpointmesher/build/CMakeFiles/meshITM.dir
+/home/andi/SW/libpointmesher/build/CMakeFiles/pointmesher.dir

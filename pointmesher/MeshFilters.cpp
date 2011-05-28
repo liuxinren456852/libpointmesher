@@ -33,34 +33,50 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#include "PointMesher.h"
 
 #include <math.h>
+
+// libpointmatcher & libpointmesher
+#include "PointMesher.h"
 
 // Eigenvalues
 #include <Eigen/Eigen>
 
-#ifdef HAVE_CGAL
 // CGAL
-#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
-#include <CGAL/Delaunay_triangulation_2.h>
-#include <CGAL/Triangulation_vertex_base_with_info_2.h>
-#include <CGAL/centroid.h>
-#include <CGAL/Simple_cartesian.h>
-#include <CGAL/Polyhedron_incremental_builder_3.h>
-#include <CGAL/Polyhedron_3.h>
-#include <CGAL/Polyhedron_items_with_id_3.h>
-#include <CGAL/Surface_mesh_simplification/HalfedgeGraph_Polyhedron_3.h>
-#include <CGAL/Surface_mesh_simplification/edge_collapse.h>
-#include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_stop_predicate.h>
+#ifdef HAVE_CGAL
+	#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+	//#include <CGAL/Delaunay_triangulation_2.h>
+	//#include <CGAL/Triangulation_vertex_base_with_info_2.h>
+	//#include <CGAL/centroid.h>
+	//#include <CGAL/Simple_cartesian.h>
+	//#include <CGAL/Polyhedron_incremental_builder_3.h>
+	//#include <CGAL/Polyhedron_3.h>
+	//#include <CGAL/Polyhedron_items_with_id_3.h>
+	//#include <CGAL/Surface_mesh_simplification/HalfedgeGraph_Polyhedron_3.h>
+	//#include <CGAL/Surface_mesh_simplification/edge_collapse.h>
+	//#include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_stop_predicate.h>
+#endif // HAVE_CGAL
 
 
-/**************************************************************************
-* Mesh processing
-**************************************************************************/
+/**
+ * MeshFilter base class
+ **/
 
-// MeshFilter
+/*
+// Compute normal of plane in 3D
+template<typename T>
+typename PointMesher<T>::Vector3 PointMesher<T>::MeshFilter::computeNormal(Matrix3 matrixIn) const
+{
+	Vector3 v1 = matrixIn.col(1) - matrixIn.col(0);
+	Vector3 v2 = matrixIn.col(2) - matrixIn.col(0);
+	Vector3 vn = v1.cross(v2);
 
+	return vn.normalized();
+}
+*/
+
+/*
+#ifdef HAVE_CGAL
 // Compute triangle centroid
 template<typename T>
 typename PointMesher<T>::Vector3 PointMesher<T>::MeshFilter::computeCentroid(const Matrix3 matrixIn) const
@@ -82,24 +98,105 @@ typename PointMesher<T>::Vector3 PointMesher<T>::MeshFilter::computeCentroid(con
 
 	return vc;
 }
+#endif // HAVE_CGAL
+*/
 
-// Compute normal of plane in 3D
+
+// Compute Euclidean distances of vertices w.r.t. a specified point (default point: origin)
 template<typename T>
-typename PointMesher<T>::Vector3 PointMesher<T>::MeshFilter::computeNormal(Matrix3 matrixIn) const
+void PointMesher<T>::MeshFilter::computeVertexDist(const Mesh& meshIn, Vector& vDist, Matrix& mDist, const Vector3 vecPt) const
 {
-	Vector3 v1 = matrixIn.col(1) - matrixIn.col(0);
-	Vector3 v2 = matrixIn.col(2) - matrixIn.col(0);
-	Vector3 vn = v1.cross(v2);
+	int nbVert = meshIn.n_vertices();
+	vDist.resize(nbVert);
+	int nbFaces = meshIn.n_faces();
+	mDist.resize(nbFaces, 3);
 
-	return vn.normalized();
+	MPoint vPoint;
+	MPoint vPointOrig(vecPt(0), vecPt(1), vecPt(2));
+
+	// Iterate over all vertices
+	for (CVIter vIter = meshIn.vertices_begin(); vIter != meshIn.vertices_end(); ++vIter)
+	{
+		vPoint = meshIn.point(vIter.handle());
+		vDist(vIter.handle().idx()) = (vPoint - vPointOrig).norm();
+	}
+
+	// Iterate over all faces
+	int indexV = 0;
+	for (CFIter fIter = meshIn.faces_begin(); fIter != meshIn.faces_end(); ++fIter)
+	{
+		// Circulate around the current face
+  		for (CFVIter fvIter = meshIn.cfv_iter(fIter.handle()); fvIter; ++fvIter)
+		{
+			mDist(fIter.handle().idx(), indexV) = vDist(fvIter.handle().idx());
+			indexV++;
+		}
+		indexV = 0;
+  	}
 }
 
-// ---------------------------------
 
-/* Mesh operations */
+// Compute perimeters of all the faces
+template<typename T>
+void PointMesher<T>::MeshFilter::computePerimeters(const Mesh& meshIn, Vector& vPerim, Matrix& mEdges) const
+{
+	int nbFaces = meshIn.n_faces();
+	vPerim.resize(nbFaces);
+	mEdges.resize(nbFaces, 3);
+
+	// Iterate over all faces
+	VHandle vhTo, vhFrom;
+	int indexE = 0;
+	for (CFIter fIter = meshIn.faces_begin(); fIter != meshIn.faces_end(); ++fIter)
+	{
+		// Circulate around the current face
+  		for (CFHIter fhIter = meshIn.cfh_iter(fIter.handle()); fhIter; ++fhIter)
+		{
+			vhTo = meshIn.to_vertex_handle(fhIter.handle());
+			vhFrom = meshIn.from_vertex_handle(fhIter.handle());
+			mEdges(fIter.handle().idx(), indexE) = (meshIn.point(vhTo) - meshIn.point(vhFrom)).norm();
+			indexE++;
+		}
+		indexE = 0;
+	}
+
+	vPerim = mEdges.rowwise().sum();
+}
+
+
+/*
+// Compute incident angles of faces w.r.t. a specified point (default: origin)
+Vector computeIncAngles(const Vector vPt = Vector3(0, 0, 0)) const
+{
+	Matrix mCentroids = getFaceAttrByName("Centroids");
+	Matrix mNormals = getFaceAttrByName("Normals");
+
+	assert(mCentroids.rows() == vPt.rows());
+	Matrix mDir = vPt - mCentroids.colwise();
+
+	Vector vDirNorm = mDir.colwise().norm();
+	for (int i = 0; i < ; i++)
+	{
+		mDir.row(i) = mDir.row(i).cwise() / vDirNorm;
+	}
+
+	Vector vIncAngle = (mNormals.cwise() * mDir).colwise().sum;
+	vIncAngle = mComp.colwise().sum();
+	vIncAngle = vIncAngle.colwise().abs();
+	return vIncAngle;
+}
+*/
+
+template struct PointMesher<float>::MeshFilter;
+template struct PointMesher<double>::MeshFilter;
+
+
+
+/**
+ * Mesh operations
+ **/
 
 // Identity
-
 template<typename T>
 typename PointMesher<T>::Mesh PointMesher<T>::IdentityMeshFilter::filter(const Mesh& meshIn, bool& iterate)
 {
@@ -115,35 +212,18 @@ template struct PointMesher<double>::IdentityMeshFilter;
 // Constructor
 template<typename T>
 PointMesher<T>::ArtifactsRemovalMeshFilter::ArtifactsRemovalMeshFilter(
-	const T thresh1, const T thresh2, const T thresh3):
-	thresh1(thresh1), thresh2(thresh2), thresh3(thresh3){}
-
+	const T thresh1, const T thresh2, const T thresh3) :
+	thresh1(thresh1), thresh2(thresh2), thresh3(thresh3)
+{
+}
 // Filter
 template<typename T>
 typename PointMesher<T>::Mesh PointMesher<T>::ArtifactsRemovalMeshFilter::filter(const Mesh& meshIn, bool& iterate) const
 {
 	// Initialization
-	int dimV, dimAttrV, nbV, dimF, dimAttrF, nbF, j;
-	
-	Mesh mesh = meshIn;
-
-	Matrix vListIn = meshIn.vertexList;
-	Matrix vAttrListIn = meshIn.vertexAttrList;
-	MAtrix vListOut = vListIn;
-	Matrix vAttrListOut = vAttrListIn;
-
-	Matrix fListIn = meshIn.faceList;
-	Matrix fAttrListIn = meshIn.faceAttrList;
-	Matrix fListOut = fListIn;
-	Matrix fAttrListOut = fAttrListIn;
-
-	dimV = vListIn.rows();
-	dimAttrV = vAttrListIn.rows();
-	nbV = vListIn.cols();
-	dimF = fListIn.rows();
-	dimAttrF = fAttrListIn.rows();
-	nbF = fListIn.cols();
-	j = nbF;
+	Mesh meshOut = meshIn;
+	int nbFaces = meshIn.n_faces();
+	std::cout << "# faces start: " << nbFaces << std::endl;
 
 	/* Filter 1
 	*	for every face in the mesh, apply threshold on the ratio
@@ -153,81 +233,67 @@ typename PointMesher<T>::Mesh PointMesher<T>::ArtifactsRemovalMeshFilter::filter
 	if (thresh1 > 0)
 	{  	
 		// Compute distances
-		Vector vDist = mesh.computeVertexDist();
-		Matrix mDist(dimF, nbF);
-		for (int i = 0; i < nbF; i++)
-		{
-			for (int k = 0; k < dimF; k++)
-			{
-				mDist(i, k) = vDist(fListIn(k, i));
-			}
-		}
-
-		Vector mRatio(nbF);
+		Vector vDist;
+		Matrix mDist;
+		computeVertexDist(meshOut, vDist, mDist);
+		
+		Vector mRatio(nbFaces);
 		mRatio = mDist.rowwise().maxCoeff();
-		mRatio = mRatio.cwise() / mDist.rowwise().minCoeff();
-		nbF = (mRatio.cwise() < thresh1).count();
+		mRatio = mRatio.array() / mDist.rowwise().minCoeff().array();
+		nbFaces = (mRatio.array() < thresh1).count();
 
 		// Filtering
-		fListOut = Matrix(dimF, nbF);
-		fAttrListOut = Matrix(dimAttrF, nbF);
-
-		j = 0;
-		for (int i = 0; i < nbF; i++)
+		for (FIter fIter = meshOut.faces_begin(); fIter != meshOut.faces_end(); ++fIter)
 		{
-			if (mRatio(i) < thresh1)
+			if (mRatio(fIter.handle().idx()) >= thresh1)
 			{
-				fListOut.col(j) = fListIn.col(i);
-				fAttrListOut.col(j) = fAttrListIn.col(i);
-				j++;
+				// Delete face
+				meshOut.delete_face(fIter, true);
 			}
-		}
-
-		// Update
-		fListIn = fListOut;
-		fAttrListIn = fAttrListOut;
-		Mesh mesh(vListIn, vAttrListIn, meshIn.vertexAttrLabels,
-				  fListIn, fAttrListIn, meshIn.faceAttrLabels);
+  		}
 	}
+
+	meshOut.garbage_collection();
+	nbFaces = meshOut.n_faces();
+	std::cout << "# faces filter 1: " << nbFaces << std::endl;
+	
 
 	/* Filter 2
 	*	for every face in the mesh, apply threshold on the face's perimeter
 	*	-> remove frontier faces
 	*/
-	
-	if (thresh2 > 0 && j > 0)
+
+	if (thresh2 > 0 && nbFaces > 0)
 	{
 		// Compute perimeters
-		Vector vPerim = mesh.computePerimeters();
-		nbF = (vPerim.cwise() < thresh2).count();
+		Vector vPerim;
+		Matrix mEdges;
+		computePerimeters(meshOut, vPerim, mEdges);
+	
+		nbFaces = (vPerim.array() < thresh2).count();
 
 		// Filtering
-		fListOut = Matrix(dimF, nbF);
-		fAttrListOut = Matrix(dimAttrF, nbF);
-
-		j = 0;
-		for (int i = 0; i < nbF; i++)
+		for (FIter fIter = meshOut.faces_begin(); fIter != meshOut.faces_end(); ++fIter)
 		{
-			if (vPerim(i) < thresh2)
+			if (vPerim(fIter.handle().idx()) >= thresh2)
 			{
-				fListOut.col(j) = fListIn.col(i);
-				fAttrListOut.col(j) = fAttrListIn.col(i);
-				j++;
+				// Delete face
+				meshOut.delete_face(fIter, true);
 			}
-		}
-
-		// Update
-		fListIn = fListOut;
-		fAttrListIn = fAttrListOut;
-		Mesh mesh(vListIn, vAttrListIn, meshIn.vertexAttrLabels,
-				  fListIn, fAttrListIn, meshIn.faceAttrLabels);
+  		}
 	}
+
+	meshOut.garbage_collection();
+	nbFaces = meshOut.n_faces();
+	std::cout << "# faces filter 2: " << nbFaces << std::endl;
+
 
 	/* Filter 3
 	*	for every face in the mesh, apply threshold on the faces
 	*	with small incident angle relative to the sensor's line of sight
 	* 	-> remove remaining shadow faces that escaped Filter 1
 	*/
+/*
 	if (thresh3 > 0 && j > 0)
 	{
 		Vector vIncAngle = mesh.computeIncAngles();
@@ -254,9 +320,18 @@ typename PointMesher<T>::Mesh PointMesher<T>::ArtifactsRemovalMeshFilter::filter
 		Mesh mesh(vListIn, vAttrListIn, meshIn.vertexAttrLabels,
 				  fListIn, fAttrListIn, meshIn.faceAttrLabels);
 	}
-	
-	mesh.cleanVertices();
-	return mesh;
+*/	
+
+	std::cout << "# faces end: " << nbFaces << std::endl;
+
+	// Save into vtk-file (for debugging)
+	if (!OpenMesh::IO::write_mesh(meshOut, "meshITM_filtered.off")) 
+	{
+  		std::cerr << "write error\n";
+  		exit(1);
+	}
+
+	return meshOut;
 }
 
 template struct PointMesher<float>::ArtifactsRemovalMeshFilter;
@@ -264,7 +339,7 @@ template struct PointMesher<double>::ArtifactsRemovalMeshFilter;
 
 
 // Simplify mesh
-
+/*
 // Modifier creating a surface mesh
 typedef CGAL::Simple_cartesian<double> K;
 typedef K::Point_3 Point;
@@ -438,5 +513,6 @@ std::cout << vp << "\n" << j << " Done3\n";
 
 template struct PointMesher<float>::SimplifyMeshingFilter;
 template struct PointMesher<double>::SimplifyMeshingFilter;
+*/
 
-#endif // HAVE_CGAL
+//#endif // HAVE_CGAL
